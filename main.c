@@ -1,5 +1,5 @@
+#include <ctype.h>
 #include <stdio.h>
-#include <math.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,114 +8,164 @@
 
 #define MIN_BITS 256
 
-int count_significant_digits(const char *str) {
-    while(*str == '0') ++str;
-    char *dot_pos = strchr(str, '.');
-    if(dot_pos) return (dot_pos - str) + strlen(dot_pos + 1);
-    else return strlen(str);
+typedef struct {
+    bool is_digit;
+    bool is_operator;
+    union {
+        enum {
+            ADD,
+            SUBTRACT,
+            NEGATE,
+            MULTIPLY,
+            DIVIDE,
+        } operation;
+        char *digits;
+    };
+} Token;
+
+typedef struct {
+    Token *arr;
+    size_t len;
+} TokenArray;
+
+void str_error_print(const char *error_msg, const char *str, size_t i) {
+    fprintf(stderr, "%s\n%s\n", error_msg, str);
+    for(size_t j = 0; j < i; ++j) putc('-', stderr);
+    fprintf(stderr, "^\n");
 }
 
-void calculate(mpfr_t result, char *operand1, char *operand2, int operator) {
-    int required_bits;
-    {
-        int d1 = count_significant_digits(operand1);
-        int d2 = count_significant_digits(operand2);
-        required_bits = MIN_BITS + (int)ceil(fmax(d1, d2) * log2(10));
+void free_token_array(TokenArray *arr) {
+    if(arr->arr) {
+        for(size_t i = 0; i < arr->len; ++i) if(arr->arr[i].is_digit) free(arr->arr[i].digits);
+        free(arr->arr);
     }
+}
 
-    mpfr_t num1, num2;
-    mpfr_init2(num1, required_bits);
-    mpfr_init2(num2, required_bits);
-    mpfr_init2(result, required_bits);
-    mpfr_set_str(num1, operand1, 10, MPFR_RNDN);
-    mpfr_set_str(num2, operand2, 10, MPFR_RNDN);
-
-    switch(operator) {
-        case '+':
-            mpfr_add(result, num1, num2, MPFR_RNDN);
-            break;
-        case '-':
-            mpfr_sub(result, num1, num2, MPFR_RNDN);
-            break;
-        case '*':
-            mpfr_mul(result, num1, num2, MPFR_RNDN);
-            break;
-        case '/':
-            if(mpfr_zero_p(num2)) mpfr_set_nan(result);
-            else mpfr_div(result, num1, num2, MPFR_RNDN);
-            break;
+TokenArray tokenize(const char *str) {
+    size_t len = strlen(str);
+    TokenArray arr = { .arr = calloc(len, sizeof(Token)) };
+    if(!arr.arr) {
+        fprintf(stderr, "tokenize: Calloc failed\n");
+        return (TokenArray){0};
     }
-    mpfr_clear(num1);
-    mpfr_clear(num2);
-}
-
-void capture_operand(char **operand, char *str, size_t start, size_t length) {
-    *operand = malloc(length + 1);
-    strncpy(*operand, &str[start], length);
-    (*operand)[length] = '\0';
-}
-
-void parse_calc_str(mpfr_t result, char *str) {
-    char *operand1 = {0}, *operand2 = {0};
-    char **current_operand = &operand1;
-    int saved_operator = {0};
-    int32_t len = 0;
-    const size_t sz = strlen(str);
-    for(size_t i = 0; i < sz; ++i) {
-        int ch = str[i];
-        if(ch >= '0' && ch <= '9') {
-            ++len;
-        } else if(ch == '+' || ch == '-' || ch == '*' || ch == '/') {
-            saved_operator = ch;
-            if (len > 0) {
-                capture_operand(current_operand, str, i - len, len);
-                len = 0;
-                current_operand = (current_operand == &operand1) ? &operand2 : &operand1;
+    bool expect_operand = true;
+    for(size_t i = 0; i < len; ++i) {
+        bool is_float = false;
+        if(isdigit(str[i])) {
+            size_t start = i;
+            bool is_digit = true;
+            while(i < len && is_digit) {
+                switch(str[i]) {
+                    case '0': case '1': case '2': case '3': case '4':
+                    case '5': case '6': case '7': case '8': case '9':
+                        ++i;
+                        break;
+                    case '.': case ',':
+                        if(!is_float) {
+                            is_float = true;
+                            ++i;
+                        } else {
+                            str_error_print("Unexpected dot", str, i);
+                            free_token_array(&arr);
+                            return (TokenArray){0};
+                        }
+                        break;
+                    default: { is_digit = false; }
+                }
             }
+            size_t digits = i - start;
+            char *num = malloc(digits + 1);
+            if(!num) {
+                fprintf(stderr, "tokenizer: Malloc failed\n");
+                free_token_array(&arr);
+                return (TokenArray){0};
+            }
+            memcpy(num, &(str[start]), digits);
+            num[digits] = '\0';
+            arr.arr[arr.len++] = (Token) { .is_digit = true, .digits = num };
+            expect_operand = false;
+            --i;  // step back so the next outer `for` increment lands on the operator
         } else {
-            printf("Error: invalid syntax\n%s\n", str);
-            for(size_t j = 0; j < i; ++j) putchar('-');
-            printf("^\n");
-            goto cleanup;
+            if (expect_operand) {
+                if (str[i] == '+') continue;
+                else if (str[i] == '-') {
+                    Token t = { .is_operator = true, .operation = NEGATE };
+                    arr.arr[arr.len++] = t;
+                    continue;
+                }
+                else {
+                    str_error_print("Unexpected operator", str, i);
+                    free_token_array(&arr);
+                    return (TokenArray){0};
+                }
+            }
+            else {
+                Token t = {.is_operator = true};
+                switch (str[i]) {
+                    case '+': t.operation = ADD;      break;
+                    case '-': t.operation = SUBTRACT; break;
+                    case '*': t.operation = MULTIPLY; break;
+                    case '/': t.operation = DIVIDE;   break;
+                    default:
+                        str_error_print("Invalid syntax", str, i);
+                        free_token_array(&arr);
+                        return (TokenArray){0};
+                }
+                arr.arr[arr.len++] = t;
+                expect_operand = true;
+            }
         }
     }
-    if (len > 0) {
-        capture_operand(current_operand, str, sz - len, len);
-    }
-    if (operand1 && operand2 && saved_operator) {
-        calculate(result, operand1, operand2, saved_operator);
-    } else {
-        printf("Error: incomplete expression\n");
-    }
-    cleanup:
-    if(operand1) free(operand1);
-    if(operand2) free(operand2);
+    return arr;
 }
 
-int main(int argc, char **argv) {
-    if(argc <= 1) {
-        printf("Error: No input\n"); 
-        return 1;
+bool shunting_yard(mpfr_t result, char *str) {
+    (void) result;
+    (void) str;
+    TokenArray token_arr = tokenize(str);
+    if(!token_arr.arr) return false;
+cleanup:
+    free_token_array(&token_arr);
+    return true;
+    goto cleanup;
+}
+
+char *str_input(FILE *stream) {
+    int ch;
+    size_t len = 0;
+    size_t bufsize = 16;
+    char *buffer = malloc(bufsize);
+    if(!buffer) {
+        printf("str_input: Malloc failed\n");
+        return NULL;
     }
-    char *str = calloc(sizeof(char), strlen(argv[1]) + 1);
-    for(int i = 1; i < argc; ++i) {
-        const size_t sz_next = strlen(argv[i]);
-        const size_t sz_curr = strlen(str);
-        char *temp = realloc(str, sz_curr + sz_next + 1);
-        if(!temp) {
-            free(str);
-            return 1;
-        } else {
-            str = temp;
-            strcpy(str + sz_curr, argv[i]);
+    while((ch = fgetc(stream)) != EOF && ch != '\n') {
+        buffer[len++] = ch;
+        if(len + 1 == bufsize) {
+            char *temp = realloc(buffer, (bufsize += 16));
+            if(!temp) {
+                printf("str_input: Realloc failed\n");
+                free(buffer);
+                return NULL;
+            } else {
+                buffer = temp;
+            }
         }
+    }
+    buffer[len] = '\0';
+    return buffer;
+}
+
+int main(void) {
+    char *expression = str_input(stdin);
+    {
+        size_t sz = strlen(expression);
+        for(size_t i = 0; i < sz; ++i) if(expression[i] == ' ') memmove(expression + i, expression + i + 1, sz - i);
     }
     mpfr_t result;
-    parse_calc_str(result, str);
-    free(str);
-    mpfr_prec_t prec_bits = mpfr_get_prec(result);
-    int dec_digits = (int)ceil(prec_bits * log10(2));
-    mpfr_printf("%.*Rg\n", (dec_digits < 15) ? dec_digits : 15, result);
+    mpfr_init2(result, MIN_BITS);
+    bool success = shunting_yard(result, expression);
     mpfr_clear(result);
-    return 0;
+    if(success) return EXIT_SUCCESS;
+    else return EXIT_FAILURE;
 }
