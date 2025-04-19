@@ -11,6 +11,7 @@
 typedef struct {
     bool is_digit;
     bool is_operator;
+    int8_t precedence;
     union {
         enum {
             ADD,
@@ -55,11 +56,8 @@ TokenArray tokenize(const char *str) {
             size_t start = i;
             bool is_digit = true;
             while(i < len && is_digit) {
-                switch(str[i]) {
-                    case '0': case '1': case '2': case '3': case '4':
-                    case '5': case '6': case '7': case '8': case '9':
-                        ++i;
-                        break;
+                if(isdigit(str[i])) ++i;
+                else switch(str[i]) {
                     case '.': case ',':
                         if(!is_float) {
                             is_float = true;
@@ -82,7 +80,7 @@ TokenArray tokenize(const char *str) {
             }
             memcpy(num, &(str[start]), digits);
             num[digits] = '\0';
-            arr.arr[arr.len++] = (Token) { .is_digit = true, .digits = num };
+            arr.arr[arr.len++] = (Token){ .is_digit = true, .digits = num };
             expect_operand = false;
             --i;  // step back so the next outer `for` increment lands on the operator
         } else {
@@ -102,10 +100,10 @@ TokenArray tokenize(const char *str) {
             else {
                 Token t = {.is_operator = true};
                 switch (str[i]) {
-                    case '+': t.operation = ADD;      break;
+                    case '+': t.operation = ADD; break;
                     case '-': t.operation = SUBTRACT; break;
                     case '*': t.operation = MULTIPLY; break;
-                    case '/': t.operation = DIVIDE;   break;
+                    case '/': t.operation = DIVIDE; break;
                     default:
                         str_error_print("Invalid syntax", str, i);
                         free_token_array(&arr);
