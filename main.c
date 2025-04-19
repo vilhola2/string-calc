@@ -139,7 +139,11 @@ TokenArray tokenize(const char *str) {
             if (expect_operand) {
                 if (str[i] == '+') continue;
                 else if (str[i] == '-') {
-                    arr.arr[arr.len++] = (Token){ .is_operator = true, .operation = NEGATE, .precedence = 5 };
+                    if (arr.len > 0 && arr.arr[arr.len-1].is_operator && arr.arr[arr.len-1].operation == NEGATE) {
+                        arr.len--; // Remove the previous NEGATE
+                    } else {
+                        arr.arr[arr.len++] = (Token){ .is_operator = true, .operation = NEGATE, .precedence = 5 };
+                    }
                     continue;
                 }
                 else {
