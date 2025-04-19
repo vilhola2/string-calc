@@ -38,13 +38,11 @@ typedef struct {
 Stack* create_stack(size_t capacity) {
     Stack *stack = malloc(sizeof(Stack));
     if(!stack) return nullptr;
-
     stack->items = malloc(sizeof(Token) * capacity);
     if(!stack->items) {
         free(stack);
         return nullptr;
     }
-
     stack->capacity = capacity;
     stack->top = -1;
     return stack;
