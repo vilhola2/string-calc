@@ -37,12 +37,12 @@ typedef struct {
 
 Stack* create_stack(size_t capacity) {
     Stack *stack = malloc(sizeof(Stack));
-    if (!stack) return NULL;
+    if(!stack) return nullptr;
 
     stack->items = malloc(sizeof(Token) * capacity);
-    if (!stack->items) {
+    if(!stack->items) {
         free(stack);
-        return NULL;
+        return nullptr;
     }
 
     stack->capacity = capacity;
@@ -51,26 +51,26 @@ Stack* create_stack(size_t capacity) {
 }
 
 void destroy_stack(Stack *stack) {
-    if (stack) {
+    if(stack) {
         free(stack->items);
         free(stack);
     }
 }
 
 bool stack_push(Stack *stack, Token item) {
-    if (stack->top >= (int)stack->capacity - 1) return false;
+    if(stack->top >= (int)stack->capacity - 1) return false;
     stack->items[++stack->top] = item;
     return true;
 }
 
 bool stack_pop(Stack *stack, Token *item) {
-    if (stack->top < 0) return false;
+    if(stack->top < 0) return false;
     *item = stack->items[stack->top--];
     return true;
 }
 
 bool stack_peek(const Stack *stack, Token *item) {
-    if (stack->top < 0) return false;
+    if(stack->top < 0) return false;
     *item = stack->items[stack->top];
     return true;
 }
@@ -136,10 +136,10 @@ TokenArray tokenize(const char *str) {
             expect_operand = false;
             --i;  // step back so the next outer `for` increment lands on the operator
         } else {
-            if (expect_operand) {
-                if (str[i] == '+') continue;
-                else if (str[i] == '-') {
-                    if (arr.len > 0 && arr.arr[arr.len-1].is_operator && arr.arr[arr.len-1].operation == NEGATE) {
+            if(expect_operand) {
+                if(str[i] == '+') continue;
+                else if(str[i] == '-') {
+                    if(arr.len > 0 && arr.arr[arr.len - 1].is_operator && arr.arr[arr.len - 1].operation == NEGATE) {
                         arr.len--; // Remove the previous NEGATE
                     } else {
                         arr.arr[arr.len++] = (Token){ .is_operator = true, .operation = NEGATE, .precedence = 5 };
@@ -153,7 +153,7 @@ TokenArray tokenize(const char *str) {
                 }
             }
             else {
-                Token t = {.is_operator = true};
+                Token t = { .is_operator = true };
                 switch (str[i]) {
                     case '+': t.operation = ADD; t.precedence = 1; break;
                     case '-': t.operation = SUBTRACT; t.precedence = 1; break;
@@ -191,14 +191,12 @@ void print_token_arr(TokenArray *token_arr) {
 
 static void apply_operator(Stack *output_stack, Token operator) {
     Token operand1, operand2, result;
-
     result.is_digit = true;
     result.is_operator = false;
     mpfr_init2(result.digits, MIN_BITS);
-
-    if (operator.operation == NEGATE) {
-        if (stack_pop(output_stack, &operand1)) {
-            if (operand1.is_digit) {
+    if(operator.operation == NEGATE) {
+        if(stack_pop(output_stack, &operand1)) {
+            if(operand1.is_digit) {
                 mpfr_neg(result.digits, operand1.digits, MPFR_RNDN);
                 mpfr_clear(operand1.digits);
             }
@@ -206,21 +204,18 @@ static void apply_operator(Stack *output_stack, Token operator) {
         stack_push(output_stack, result);
         return;
     }
-
-    if (!stack_pop(output_stack, &operand2) || !stack_pop(output_stack, &operand1)) {
-        mpfr_clear(result.digits);  // Clear result if we can't get operands
-        return;
-    }
-
-    if (!operand1.is_digit || !operand2.is_digit) {
+    if(!stack_pop(output_stack, &operand2) || !stack_pop(output_stack, &operand1)) {
         mpfr_clear(result.digits);
-        if (operand1.is_digit) mpfr_clear(operand1.digits);
-        if (operand2.is_digit) mpfr_clear(operand2.digits);
         return;
     }
-
+    if(!operand1.is_digit || !operand2.is_digit) {
+        mpfr_clear(result.digits);
+        if(operand1.is_digit) mpfr_clear(operand1.digits);
+        if(operand2.is_digit) mpfr_clear(operand2.digits);
+        return;
+    }
     bool success = true;
-    switch (operator.operation) {
+    switch(operator.operation) {
         case ADD:
             mpfr_add(result.digits, operand1.digits, operand2.digits, MPFR_RNDN);
             break;
@@ -231,7 +226,7 @@ static void apply_operator(Stack *output_stack, Token operator) {
             mpfr_mul(result.digits, operand1.digits, operand2.digits, MPFR_RNDN);
             break;
         case DIVIDE:
-            if (mpfr_zero_p(operand2.digits)) {
+            if(mpfr_zero_p(operand2.digits)) {
                 fprintf(stderr, "Error: Division by zero\n");
                 success = false;
             } else {
@@ -240,11 +235,9 @@ static void apply_operator(Stack *output_stack, Token operator) {
             break;
         default: break;
     }
-
     mpfr_clear(operand1.digits);
     mpfr_clear(operand2.digits);
-
-    if (success) {
+    if(success) {
         stack_push(output_stack, result);
     } else {
         mpfr_clear(result.digits);
@@ -253,73 +246,57 @@ static void apply_operator(Stack *output_stack, Token operator) {
 
 bool calculate_infix(mpfr_t result, const char *expression) {
     TokenArray tokens = tokenize(expression);
-    if (!tokens.arr) return false;
-
+    if(!tokens.arr) return false;
     Stack *operator_stack = create_stack(tokens.len);
     Stack *output_stack = create_stack(tokens.len);
-
-    if (!operator_stack || !output_stack) {
+    if(!operator_stack || !output_stack) {
         free_token_array(&tokens);
-        if (operator_stack) destroy_stack(operator_stack);
-        if (output_stack) destroy_stack(output_stack);
+        if(operator_stack) destroy_stack(operator_stack);
+        if(output_stack) destroy_stack(output_stack);
         return false;
     }
-
     // Process tokens using Shunting Yard algorithm
-    for (size_t i = 0; i < tokens.len; i++) {
+    for(size_t i = 0; i < tokens.len; i++) {
         Token current = tokens.arr[i];
-
-        if (current.is_digit) {
-            // For digits, we need to create a new token with its own mpfr_t
-            Token new_token = {
-                .is_digit = true,
-                .is_operator = false
-            };
+        if(current.is_digit) {
+            Token new_token = { .is_digit = true, };
             mpfr_init2(new_token.digits, MIN_BITS);
             mpfr_set(new_token.digits, current.digits, MPFR_RNDN);
             stack_push(output_stack, new_token);
         } else {
             Token top_op;
-            while (!stack_is_empty(operator_stack) &&
-                   stack_peek(operator_stack, &top_op) &&
-                   top_op.precedence >= current.precedence) {
+            while(!stack_is_empty(operator_stack)
+                && stack_peek(operator_stack, &top_op)
+                && top_op.precedence >= current.precedence) {
                 stack_pop(operator_stack, &top_op);
                 apply_operator(output_stack, top_op);
             }
             stack_push(operator_stack, current);
         }
     }
-
     // Process remaining operators
     Token op;
-    while (stack_pop(operator_stack, &op)) {
+    while(stack_pop(operator_stack, &op)) {
         apply_operator(output_stack, op);
     }
-
-    // Get final result
     Token final_result;
     bool success = false;
-
-    if (stack_pop(output_stack, &final_result) && stack_is_empty(output_stack)) {
-        if (final_result.is_digit) {
+    if(stack_pop(output_stack, &final_result) && stack_is_empty(output_stack)) {
+        if(final_result.is_digit) {
             mpfr_set(result, final_result.digits, MPFR_RNDN);
             mpfr_clear(final_result.digits);
             success = true;
         }
     }
-
-    // Cleanup any remaining tokens in the stacks
-    while (stack_pop(output_stack, &final_result)) {
+    // Cleanup
+    while(stack_pop(output_stack, &final_result)) {
         if (final_result.is_digit) {
             mpfr_clear(final_result.digits);
         }
     }
-
-    // Cleanup
     destroy_stack(operator_stack);
     destroy_stack(output_stack);
     free_token_array(&tokens);
-
     return success;
 }
 
@@ -355,7 +332,7 @@ int main(void) {
         char *expression = str_input(stdin);
         if(!strcmp(expression, "q")) return EXIT_SUCCESS;
         {
-            size_t sz = strlen(expression);
+            const size_t sz = strlen(expression);
             for(size_t i = 0; i < sz; ++i) if(expression[i] == ' ') memmove(expression + i, expression + i + 1, sz - i);
         }
         mpfr_t result;
