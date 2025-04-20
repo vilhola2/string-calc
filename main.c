@@ -19,6 +19,8 @@ typedef struct {
             NEGATE,
             MULTIPLY,
             DIVIDE,
+            LEFT_PARENTHESIS,
+            RIGHT_PARENTHESIS,
         } operation;
         mpfr_t digits;
     };
@@ -92,13 +94,14 @@ void free_token_array(TokenArray *arr) {
 
 TokenArray tokenize(const char *str) {
     size_t len = strlen(str);
+    const size_t starting_len = len; // len might grow
     TokenArray arr = { .arr = calloc(len, sizeof(Token)) };
     if(!arr.arr) {
         fprintf(stderr, "tokenize: Calloc failed\n");
         return (TokenArray){0};
     }
     bool expect_operand = true;
-    for(size_t i = 0; i < len; ++i) {
+    for(size_t i = 0; i < starting_len; ++i) {
         bool is_float = false;
         if(isdigit(str[i])) {
             size_t start = i;
@@ -106,7 +109,11 @@ TokenArray tokenize(const char *str) {
             while(i < len && is_digit) {
                 if(isdigit(str[i])) ++i;
                 else switch(str[i]) {
-                    case '.': case ',':
+                    case ',':
+                        fprintf(stderr, "Unexpected comma: use '.' instead\n");
+                        free_token_array(&arr);
+                        return (TokenArray){0};
+                    case '.':
                         if(!is_float) {
                             is_float = true;
                             ++i;
@@ -135,7 +142,25 @@ TokenArray tokenize(const char *str) {
             expect_operand = false;
             --i;  // step back so the next outer `for` increment lands on the operator
         } else {
-            if(expect_operand) {
+            if(str[i] == '(') {
+                if(arr.len > 0 && (arr.arr[arr.len - 1].is_digit
+                    || (arr.arr[arr.len - 1].is_operator
+                    && arr.arr[arr.len - 1].operation == RIGHT_PARENTHESIS))
+                ) {
+                    Token *new_arr = realloc(arr.arr, ++len * sizeof(Token));
+                    if(!new_arr) {
+                        fprintf(stderr, "tokenize: Realloc failed\n");
+                        free_token_array(&arr);
+                        return (TokenArray){0};
+                    } else {
+                        arr.arr = new_arr;
+                        arr.arr[arr.len++] = (Token){ .is_operator = true, .operation = MULTIPLY, .precedence = 2 };
+                    }
+                }
+                arr.arr[arr.len++] = (Token){ .is_operator = true, .operation = LEFT_PARENTHESIS };
+            }
+            else if(str[i] == ')') arr.arr[arr.len++] = (Token){ .is_operator = true, .operation = RIGHT_PARENTHESIS };
+            else if(expect_operand) {
                 if(str[i] == '+') continue;
                 else if(str[i] == '-') {
                     if(arr.len > 0 && arr.arr[arr.len - 1].is_operator && arr.arr[arr.len - 1].operation == NEGATE) {
@@ -171,6 +196,7 @@ TokenArray tokenize(const char *str) {
     return arr;
 }
 
+// Debug function
 void print_token_arr(TokenArray *token_arr) {
     for(size_t i = 0; i < token_arr->len; ++i) {
         bool is_number = (token_arr->arr[i].is_digit);
@@ -184,6 +210,8 @@ void print_token_arr(TokenArray *token_arr) {
         else if(token_arr->arr[i].operation == SUBTRACT) printf("SUBTRACT");
         else if(token_arr->arr[i].operation == DIVIDE) printf("DIVIDE");
         else if(token_arr->arr[i].operation == MULTIPLY) printf("MULTIPLY");
+        else if(token_arr->arr[i].operation == LEFT_PARENTHESIS) printf("LEFT_PAREN");
+        else if(token_arr->arr[i].operation == RIGHT_PARENTHESIS) printf("RIGHT_PAREN");
         printf(", precedence: %d\n", token_arr->arr[i].precedence);
     }
 }
@@ -246,6 +274,7 @@ static void apply_operator(Stack *output_stack, Token operator) {
 bool calculate_infix(mpfr_t result, const char *expression) {
     TokenArray tokens = tokenize(expression);
     if(!tokens.arr) return false;
+    //print_token_arr(&tokens);
     Stack *operator_stack = create_stack(tokens.len);
     Stack *output_stack = create_stack(tokens.len);
     if(!operator_stack || !output_stack) {
@@ -257,7 +286,18 @@ bool calculate_infix(mpfr_t result, const char *expression) {
     // Process tokens using Shunting Yard algorithm
     for(size_t i = 0; i < tokens.len; i++) {
         Token current = tokens.arr[i];
-        if(current.is_digit) {
+        if(current.is_operator && current.operation == LEFT_PARENTHESIS) {
+            stack_push(operator_stack, current);
+        }
+        else if(current.is_operator && current.operation == RIGHT_PARENTHESIS) {
+            Token top_op;
+            while(!stack_is_empty(operator_stack)) {
+                stack_pop(operator_stack, &top_op);
+                if(top_op.is_operator && top_op.operation == LEFT_PARENTHESIS) break;
+                apply_operator(output_stack, top_op);
+            }
+        }
+        else if(current.is_digit) {
             Token new_token = { .is_digit = true, };
             mpfr_init2(new_token.digits, MIN_BITS);
             mpfr_set(new_token.digits, current.digits, MPFR_RNDN);
@@ -351,7 +391,6 @@ int main(void) {
         } else {
             mpfr_clear(result);
             free(expression);
-            break;
         }
     }
     return EXIT_FAILURE;
