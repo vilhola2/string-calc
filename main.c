@@ -328,7 +328,12 @@ char *str_input(FILE *stream) {
 int main(void) {
     printf("Start typing an expression or enter 'q' to quit\n");
     while(true) {
+        printf(">  ");
         char *expression = str_input(stdin);
+        if(!*(expression)) {
+            printf("Empty expression\n");
+            continue;
+        }
         if(!strcmp(expression, "q")) {
             free(expression);
             return EXIT_SUCCESS;
