@@ -113,6 +113,7 @@ TokenArray tokenize(const char *str) {
         if(str[i] >= 'A' && str[i] <= 'Z') {
             arr.arr[arr.len++] = (Token){ .is_var = true, .var = str[i] };
             is_var_assignment = true;
+            expect_operand = false;
         } else if(arr.len > 0 && str[i] == '=') {
             if(has_equals) {
                 str_error_print("You can't assign twice", str, i);
@@ -122,6 +123,10 @@ TokenArray tokenize(const char *str) {
             if(is_var_assignment) {
                 arr.arr[arr.len++] = (Token){ .is_operator = true, .operation = SET_VAR, .is_right_associative = true };
                 has_equals = true;
+            } else {
+                str_error_print("Nothing to assign", str, i);
+                free_token_array(&arr);
+                return (TokenArray){0};
             }
         }
         else if(isdigit(str[i])) {
@@ -241,7 +246,7 @@ void print_token_arr(TokenArray *token_arr) {
     }
 }
 
-static void apply_operator(Stack *output_stack, Token operator) {
+void apply_operator(Stack *output_stack, Token operator) {
     Token operand1, operand2, result;
     result.is_digit = true;
     result.is_operator = false;
@@ -251,6 +256,14 @@ static void apply_operator(Stack *output_stack, Token operator) {
             if(operand1.is_digit) {
                 mpfr_neg(result.digits, operand1.digits, MPFR_RNDN);
                 mpfr_clear(operand1.digits);
+            } else if(operand1.is_var) {
+                if(vars[operand1.var - 'A'].is_initialized) {
+                    mpfr_neg(result.digits, vars[operand1.var - 'A'].var, MPFR_RNDN);
+                } else {
+                    fprintf(stderr, "Variable '%c' is not defined\n", operand1.var);
+                    mpfr_clear(result.digits);
+                    return;
+                }
             }
         }
         stack_push(output_stack, result);
@@ -260,41 +273,84 @@ static void apply_operator(Stack *output_stack, Token operator) {
         mpfr_clear(result.digits);
         return;
     }
-    if((!operand1.is_digit || !operand2.is_digit) && operator.operation != SET_VAR) {
-        mpfr_clear(result.digits);
-        if(operand1.is_digit) mpfr_clear(operand1.digits);
-        if(operand2.is_digit) mpfr_clear(operand2.digits);
-        return;
+    if(operator.operation == SET_VAR) {
+        if(!vars[operand1.var - 'A'].is_initialized) {
+            mpfr_init2(vars[operand1.var - 'A'].var, MIN_BITS);
+            vars[operand1.var - 'A'].is_initialized = true;
+        }
+        if(operand2.is_digit) {
+            mpfr_set(vars[operand1.var - 'A'].var, operand2.digits, MPFR_RNDN);
+            mpfr_set(result.digits, operand2.digits, MPFR_RNDN);
+            if(operand2.is_digit) mpfr_clear(operand2.digits);
+            stack_push(output_stack, result);
+            return;
+        } else if(operand2.is_var) {
+            if(!vars[operand2.var - 'A'].is_initialized) {
+                fprintf(stderr, "Variable '%c' is not defined\n", operand2.var);
+                mpfr_clear(result.digits);
+                return;
+            }
+            mpfr_set(vars[operand1.var - 'A'].var, vars[operand2.var - 'A'].var, MPFR_RNDN);
+            mpfr_set(result.digits, vars[operand2.var - 'A'].var, MPFR_RNDN);
+            stack_push(output_stack, result);
+            return;
+        }
+    }
+    mpfr_t val1, val2;
+    bool init_val1 = false, init_val2 = false;
+    if(operand1.is_var) {
+        if(!vars[operand1.var - 'A'].is_initialized) {
+            fprintf(stderr, "Variable '%c' is not defined\n", operand1.var);
+            mpfr_clear(result.digits);
+            return;
+        }
+        mpfr_init2(val1, MIN_BITS);
+        mpfr_set(val1, vars[operand1.var - 'A'].var, MPFR_RNDN);
+        init_val1 = true;
+    } else if(operand1.is_digit) {
+        mpfr_init2(val1, MIN_BITS);
+        mpfr_set(val1, operand1.digits, MPFR_RNDN);
+        init_val1 = true;
+    }
+    if(operand2.is_var) {
+        if(!vars[operand2.var - 'A'].is_initialized) {
+            fprintf(stderr, "Variable '%c' is not defined\n", operand2.var);
+            if(init_val1) mpfr_clear(val1);
+            mpfr_clear(result.digits);
+            return;
+        }
+        mpfr_init2(val2, MIN_BITS);
+        mpfr_set(val2, vars[operand2.var - 'A'].var, MPFR_RNDN);
+        init_val2 = true;
+    } else if(operand2.is_digit) {
+        mpfr_init2(val2, MIN_BITS);
+        mpfr_set(val2, operand2.digits, MPFR_RNDN);
+        init_val2 = true;
     }
     bool success = true;
     switch(operator.operation) {
         case ADD:
-            mpfr_add(result.digits, operand1.digits, operand2.digits, MPFR_RNDN);
+            mpfr_add(result.digits, val1, val2, MPFR_RNDN);
             break;
         case SUBTRACT:
-            mpfr_sub(result.digits, operand1.digits, operand2.digits, MPFR_RNDN);
+            mpfr_sub(result.digits, val1, val2, MPFR_RNDN);
             break;
         case MULTIPLY:
-            mpfr_mul(result.digits, operand1.digits, operand2.digits, MPFR_RNDN);
+            mpfr_mul(result.digits, val1, val2, MPFR_RNDN);
             break;
         case DIVIDE:
-            if(mpfr_zero_p(operand2.digits)) {
+            if(mpfr_zero_p(val2)) {
                 fprintf(stderr, "Error: Division by zero\n");
                 success = false;
             } else {
-                mpfr_div(result.digits, operand1.digits, operand2.digits, MPFR_RNDN);
+                mpfr_div(result.digits, val1, val2, MPFR_RNDN);
             }
             break;
-        case SET_VAR:
-            if(!vars[operand1.var - 'A'].is_initialized) {
-                mpfr_init2(vars[operand1.var - 'A'].var, MIN_BITS);
-                vars[operand1.var - 'A'].is_initialized = true;
-            }
-            mpfr_set(vars[operand1.var - 'A'].var, operand2.digits, MPFR_RNDN);
-            mpfr_set(result.digits, operand2.digits, MPFR_RNDN);
-            break;
-        default: break;
+        default: success = false; break;
     }
+    // Cleanup
+    if(init_val1) mpfr_clear(val1);
+    if(init_val2) mpfr_clear(val2);
     if(operand1.is_digit) mpfr_clear(operand1.digits);
     if(operand2.is_digit) mpfr_clear(operand2.digits);
     if(success) {
@@ -363,7 +419,12 @@ bool calculate_infix(mpfr_t result, const char *expression) {
             mpfr_clear(final_result.digits);
             success = true;
         } else if(final_result.is_var) {
-            printf("Set var %c\n", final_result.var);
+            if(vars[final_result.var - 'A'].is_initialized) {
+                mpfr_set(result, vars[final_result.var - 'A'].var, MPFR_RNDN);
+                success = true;
+            } else {
+                fprintf(stderr, "Variable '%c' is not defined\n", final_result.var);
+            }
         }
     }
     // Cleanup
@@ -406,12 +467,18 @@ char *str_input(FILE *stream) {
 
 int main(void) {
     read_vars();
-    printf("Start typing an expression or enter 'q' to quit\n");
+    printf("Start typing an expression or enter 'h' for help\n");
     while(true) {
         printf(">  ");
         char *expression = str_input(stdin);
         if(!*(expression)) {
             printf("Empty expression\n");
+            free(expression);
+            continue;
+        }
+        if(!strcmp(expression, "h")) {
+            printf("You can use parenthesis '()'\nYou can use A-Z as variables\nEnter 'q' to quit\n");
+            free(expression);
             continue;
         }
         if(!strcmp(expression, "q")) {
