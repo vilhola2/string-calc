@@ -131,6 +131,7 @@ TokenArray tokenize(const char *str) {
             arr.arr[arr.len].is_digit = true;
             mpfr_init2(arr.arr[arr.len].digits, MIN_BITS);
             mpfr_set_str(arr.arr[arr.len++].digits, num, 0, MPFR_RNDN);
+            free(num);
             expect_operand = false;
             --i;  // step back so the next outer `for` increment lands on the operator
         } else {
@@ -328,8 +329,10 @@ int main(void) {
     printf("Start typing an expression or enter 'q' to quit\n");
     while(true) {
         char *expression = str_input(stdin);
-        if(!strcmp(expression, "q")) return EXIT_SUCCESS;
-        {
+        if(!strcmp(expression, "q")) {
+            free(expression);
+            return EXIT_SUCCESS;
+        } else {
             const size_t sz = strlen(expression);
             for(size_t i = 0; i < sz; ++i) if(expression[i] == ' ') memmove(expression + i, expression + i + 1, sz - i);
         }
@@ -339,8 +342,10 @@ int main(void) {
         if(success) {
             mpfr_printf("Result: %Rg\n", result);
             mpfr_clear(result);
+            free(expression);
         } else {
             mpfr_clear(result);
+            free(expression);
             break;
         }
     }
