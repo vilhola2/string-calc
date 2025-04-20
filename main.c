@@ -5,12 +5,14 @@
 #include <string.h>
 #include <gmp.h>
 #include <mpfr.h>
-
-#define MIN_BITS 256
+#include "defs.h"
+#include "file_ops.h"
 
 typedef struct {
     bool is_digit;
     bool is_operator;
+    bool is_var;
+    bool is_right_associative;
     int8_t precedence;
     union {
         enum {
@@ -21,8 +23,10 @@ typedef struct {
             DIVIDE,
             LEFT_PARENTHESIS,
             RIGHT_PARENTHESIS,
+            SET_VAR,
         } operation;
         mpfr_t digits;
+        char var;
     };
 } Token;
 
@@ -101,9 +105,26 @@ TokenArray tokenize(const char *str) {
         return (TokenArray){0};
     }
     bool expect_operand = true;
+    bool has_equals = false;
+    bool is_var_assignment = false;
     for(size_t i = 0; i < starting_len; ++i) {
         bool is_float = false;
-        if(isdigit(str[i])) {
+        // Check for user variable definition first
+        if(str[i] >= 'A' && str[i] <= 'Z') {
+            arr.arr[arr.len++] = (Token){ .is_var = true, .var = str[i] };
+            is_var_assignment = true;
+        } else if(arr.len > 0 && str[i] == '=') {
+            if(has_equals) {
+                str_error_print("You can't assign twice", str, i);
+                free_token_array(&arr);
+                return (TokenArray){0};
+            }
+            if(is_var_assignment) {
+                arr.arr[arr.len++] = (Token){ .is_operator = true, .operation = SET_VAR, .is_right_associative = true };
+                has_equals = true;
+            }
+        }
+        else if(isdigit(str[i])) {
             size_t start = i;
             bool is_digit = true;
             while(i < len && is_digit) {
@@ -199,19 +220,23 @@ TokenArray tokenize(const char *str) {
 // Debug function
 void print_token_arr(TokenArray *token_arr) {
     for(size_t i = 0; i < token_arr->len; ++i) {
-        bool is_number = (token_arr->arr[i].is_digit);
-        printf("%s ",  (is_number) ? "Number:" : "Operator:");
-        if(is_number) {
-            mpfr_printf("%Rg\n", token_arr->arr[i].digits);
+        if(token_arr->arr[i].is_digit) {
+            mpfr_printf("Number: %Rg\n", token_arr->arr[i].digits);
             continue;
         }
-        else if(token_arr->arr[i].operation == ADD) printf("ADD");
+        if(token_arr->arr[i].is_var) {
+            printf("Variable: %c\n", token_arr->arr[i].var);
+            continue;
+        }
+        printf("Operation: ");
+        if(token_arr->arr[i].operation == ADD) printf("ADD");
         else if(token_arr->arr[i].operation == NEGATE) printf("NEGATE");
         else if(token_arr->arr[i].operation == SUBTRACT) printf("SUBTRACT");
         else if(token_arr->arr[i].operation == DIVIDE) printf("DIVIDE");
         else if(token_arr->arr[i].operation == MULTIPLY) printf("MULTIPLY");
         else if(token_arr->arr[i].operation == LEFT_PARENTHESIS) printf("LEFT_PAREN");
         else if(token_arr->arr[i].operation == RIGHT_PARENTHESIS) printf("RIGHT_PAREN");
+        else if(token_arr->arr[i].operation == SET_VAR) printf("SET_VAR");
         printf(", precedence: %d\n", token_arr->arr[i].precedence);
     }
 }
@@ -235,7 +260,7 @@ static void apply_operator(Stack *output_stack, Token operator) {
         mpfr_clear(result.digits);
         return;
     }
-    if(!operand1.is_digit || !operand2.is_digit) {
+    if((!operand1.is_digit || !operand2.is_digit) && operator.operation != SET_VAR) {
         mpfr_clear(result.digits);
         if(operand1.is_digit) mpfr_clear(operand1.digits);
         if(operand2.is_digit) mpfr_clear(operand2.digits);
@@ -260,10 +285,18 @@ static void apply_operator(Stack *output_stack, Token operator) {
                 mpfr_div(result.digits, operand1.digits, operand2.digits, MPFR_RNDN);
             }
             break;
+        case SET_VAR:
+            if(!vars[operand1.var - 'A'].is_initialized) {
+                mpfr_init2(vars[operand1.var - 'A'].var, MIN_BITS);
+                vars[operand1.var - 'A'].is_initialized = true;
+            }
+            mpfr_set(vars[operand1.var - 'A'].var, operand2.digits, MPFR_RNDN);
+            mpfr_set(result.digits, operand2.digits, MPFR_RNDN);
+            break;
         default: break;
     }
-    mpfr_clear(operand1.digits);
-    mpfr_clear(operand2.digits);
+    if(operand1.is_digit) mpfr_clear(operand1.digits);
+    if(operand2.is_digit) mpfr_clear(operand2.digits);
     if(success) {
         stack_push(output_stack, result);
     } else {
@@ -297,6 +330,7 @@ bool calculate_infix(mpfr_t result, const char *expression) {
                 apply_operator(output_stack, top_op);
             }
         }
+        else if(current.is_var) stack_push(output_stack, current);
         else if(current.is_digit) {
             Token new_token = { .is_digit = true, };
             mpfr_init2(new_token.digits, MIN_BITS);
@@ -306,7 +340,9 @@ bool calculate_infix(mpfr_t result, const char *expression) {
             Token top_op;
             while(!stack_is_empty(operator_stack)
                 && stack_peek(operator_stack, &top_op)
-                && top_op.precedence >= current.precedence) {
+                && (top_op.is_operator)
+                && ((top_op.precedence > current.precedence)
+                || (top_op.precedence == current.precedence && !current.is_right_associative))) {
                 stack_pop(operator_stack, &top_op);
                 apply_operator(output_stack, top_op);
             }
@@ -318,6 +354,7 @@ bool calculate_infix(mpfr_t result, const char *expression) {
     while(stack_pop(operator_stack, &op)) {
         apply_operator(output_stack, op);
     }
+
     Token final_result;
     bool success = false;
     if(stack_pop(output_stack, &final_result) && stack_is_empty(output_stack)) {
@@ -325,6 +362,8 @@ bool calculate_infix(mpfr_t result, const char *expression) {
             mpfr_set(result, final_result.digits, MPFR_RNDN);
             mpfr_clear(final_result.digits);
             success = true;
+        } else if(final_result.is_var) {
+            printf("Set var %c\n", final_result.var);
         }
     }
     // Cleanup
@@ -366,6 +405,7 @@ char *str_input(FILE *stream) {
 }
 
 int main(void) {
+    read_vars();
     printf("Start typing an expression or enter 'q' to quit\n");
     while(true) {
         printf(">  ");
@@ -376,6 +416,8 @@ int main(void) {
         }
         if(!strcmp(expression, "q")) {
             free(expression);
+            write_all_vars();
+            cleanup_vars();
             return EXIT_SUCCESS;
         } else {
             const size_t sz = strlen(expression);
@@ -388,10 +430,12 @@ int main(void) {
             mpfr_printf("Result: %Rg\n", result);
             mpfr_clear(result);
             free(expression);
+            write_all_vars();
         } else {
             mpfr_clear(result);
             free(expression);
         }
     }
+    cleanup_vars();
     return EXIT_FAILURE;
 }
