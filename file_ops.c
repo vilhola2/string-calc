@@ -36,10 +36,7 @@ bool write_all_vars(void) {
 
 bool read_vars(void) {
     FILE *fp = fopen(".variables", "r");
-    if(fp == nullptr) {
-        fprintf(stderr, "read_vars: Failed to open file for reading\n");
-        return false;
-    }
+    if(!fp) return false;
     fseek(fp, 0, SEEK_END);
     size_t sz = ftell(fp);
     rewind(fp);
