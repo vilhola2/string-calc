@@ -246,18 +246,16 @@ void print_token_arr(TokenArray *token_arr) {
     }
 }
 
-bool get_val(mpfr_t val, Token t) {
-    if(t.is_var) {
-        if(!vars[t.var - 'A'].is_initialized) {
-            fprintf(stderr, "Variable '%c' is not defined\n", t.var);
+bool get_val(mpfr_t **val, Token *t) {
+    if(t->is_var) {
+        if(!vars[t->var - 'A'].is_initialized) {
+            fprintf(stderr, "Variable '%c' is not defined\n", t->var);
             //mpfr_clear(result.digits);
             return false;
         }
-        mpfr_init2(val, MIN_BITS);
-        mpfr_set(val, vars[t.var - 'A'].var, MPFR_RNDN);
-    } else if(t.is_digit) {
-        mpfr_init2(val, MIN_BITS);
-        mpfr_set(val, t.digits, MPFR_RNDN);
+        *val = &vars[t->var - 'A'].var;
+    } else if(t->is_digit) {
+        *val = &t->digits;
     }
     return true;
 }
@@ -313,28 +311,28 @@ void apply_operator(Stack *output_stack, Token operator) {
             return;
         }
     }
-    mpfr_t val1, val2;
+    mpfr_t *val1, *val2;
     bool init_val1 = false, init_val2 = false;
-    if(get_val(val1, operand1)) init_val1 = true;
-    if(get_val(val2, operand2)) init_val2 = true;
+    if(get_val(&val1, &operand1)) init_val1 = true;
+    if(get_val(&val2, &operand2)) init_val2 = true;
     if(!init_val1 || !init_val2) goto cleanup;
     bool success = true;
     switch(operator.operation) {
         case ADD:
-            mpfr_add(result.digits, val1, val2, MPFR_RNDN);
+            mpfr_add(result.digits, *val1, *val2, MPFR_RNDN);
             break;
         case SUBTRACT:
-            mpfr_sub(result.digits, val1, val2, MPFR_RNDN);
+            mpfr_sub(result.digits, *val1, *val2, MPFR_RNDN);
             break;
         case MULTIPLY:
-            mpfr_mul(result.digits, val1, val2, MPFR_RNDN);
+            mpfr_mul(result.digits, *val1, *val2, MPFR_RNDN);
             break;
         case DIVIDE:
-            if(mpfr_zero_p(val2)) {
+            if(mpfr_zero_p(*val2)) {
                 fprintf(stderr, "Error: Division by zero\n");
                 success = false;
             } else {
-                mpfr_div(result.digits, val1, val2, MPFR_RNDN);
+                mpfr_div(result.digits, *val1, *val2, MPFR_RNDN);
             }
             break;
         default: success = false; break;
@@ -342,8 +340,6 @@ void apply_operator(Stack *output_stack, Token operator) {
     if(success) stack_push(output_stack, result);
     else mpfr_clear(result.digits);
 cleanup:
-    if(init_val1) mpfr_clear(val1);
-    if(init_val2) mpfr_clear(val2);
     if(operand1.is_digit) mpfr_clear(operand1.digits);
     if(operand2.is_digit) mpfr_clear(operand2.digits);
 }
@@ -417,7 +413,7 @@ bool calculate_infix(mpfr_t result, const char *expression) {
     }
     // Cleanup
     while(stack_pop(output_stack, &final_result)) {
-        if (final_result.is_digit) {
+        if(final_result.is_digit) {
             mpfr_clear(final_result.digits);
         }
     }
