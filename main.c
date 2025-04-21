@@ -246,6 +246,22 @@ void print_token_arr(TokenArray *token_arr) {
     }
 }
 
+bool get_val(mpfr_t val, Token t) {
+    if(t.is_var) {
+        if(!vars[t.var - 'A'].is_initialized) {
+            fprintf(stderr, "Variable '%c' is not defined\n", t.var);
+            //mpfr_clear(result.digits);
+            return false;
+        }
+        mpfr_init2(val, MIN_BITS);
+        mpfr_set(val, vars[t.var - 'A'].var, MPFR_RNDN);
+    } else if(t.is_digit) {
+        mpfr_init2(val, MIN_BITS);
+        mpfr_set(val, t.digits, MPFR_RNDN);
+    }
+    return true;
+}
+
 void apply_operator(Stack *output_stack, Token operator) {
     Token operand1, operand2, result;
     result.is_digit = true;
@@ -283,6 +299,7 @@ void apply_operator(Stack *output_stack, Token operator) {
             mpfr_set(result.digits, operand2.digits, MPFR_RNDN);
             if(operand2.is_digit) mpfr_clear(operand2.digits);
             stack_push(output_stack, result);
+            write_all_vars();
             return;
         } else if(operand2.is_var) {
             if(!vars[operand2.var - 'A'].is_initialized) {
@@ -298,35 +315,9 @@ void apply_operator(Stack *output_stack, Token operator) {
     }
     mpfr_t val1, val2;
     bool init_val1 = false, init_val2 = false;
-    if(operand1.is_var) {
-        if(!vars[operand1.var - 'A'].is_initialized) {
-            fprintf(stderr, "Variable '%c' is not defined\n", operand1.var);
-            mpfr_clear(result.digits);
-            return;
-        }
-        mpfr_init2(val1, MIN_BITS);
-        mpfr_set(val1, vars[operand1.var - 'A'].var, MPFR_RNDN);
-        init_val1 = true;
-    } else if(operand1.is_digit) {
-        mpfr_init2(val1, MIN_BITS);
-        mpfr_set(val1, operand1.digits, MPFR_RNDN);
-        init_val1 = true;
-    }
-    if(operand2.is_var) {
-        if(!vars[operand2.var - 'A'].is_initialized) {
-            fprintf(stderr, "Variable '%c' is not defined\n", operand2.var);
-            if(init_val1) mpfr_clear(val1);
-            mpfr_clear(result.digits);
-            return;
-        }
-        mpfr_init2(val2, MIN_BITS);
-        mpfr_set(val2, vars[operand2.var - 'A'].var, MPFR_RNDN);
-        init_val2 = true;
-    } else if(operand2.is_digit) {
-        mpfr_init2(val2, MIN_BITS);
-        mpfr_set(val2, operand2.digits, MPFR_RNDN);
-        init_val2 = true;
-    }
+    if(get_val(val1, operand1)) init_val1 = true;
+    if(get_val(val2, operand2)) init_val2 = true;
+    if(!init_val1 || !init_val2) goto cleanup;
     bool success = true;
     switch(operator.operation) {
         case ADD:
@@ -348,16 +339,13 @@ void apply_operator(Stack *output_stack, Token operator) {
             break;
         default: success = false; break;
     }
-    // Cleanup
+    if(success) stack_push(output_stack, result);
+    else mpfr_clear(result.digits);
+cleanup:
     if(init_val1) mpfr_clear(val1);
     if(init_val2) mpfr_clear(val2);
     if(operand1.is_digit) mpfr_clear(operand1.digits);
     if(operand2.is_digit) mpfr_clear(operand2.digits);
-    if(success) {
-        stack_push(output_stack, result);
-    } else {
-        mpfr_clear(result.digits);
-    }
 }
 
 bool calculate_infix(mpfr_t result, const char *expression) {
@@ -487,8 +475,14 @@ int main(void) {
             cleanup_vars();
             return EXIT_SUCCESS;
         } else {
-            const size_t sz = strlen(expression);
-            for(size_t i = 0; i < sz; ++i) if(expression[i] == ' ') memmove(expression + i, expression + i + 1, sz - i);
+            // remove the spaces
+            size_t read = 0, write = 0;
+            while(expression[read] != '\0') {
+                if (expression[read++] != ' ') {
+                    expression[write++] = expression[read - 1];
+                }
+            }
+            expression[write] = '\0';
         }
         mpfr_t result;
         mpfr_init2(result, MIN_BITS);
@@ -497,7 +491,6 @@ int main(void) {
             mpfr_printf("Result: %Rg\n", result);
             mpfr_clear(result);
             free(expression);
-            write_all_vars();
         } else {
             mpfr_clear(result);
             free(expression);
