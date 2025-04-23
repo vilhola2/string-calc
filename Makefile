@@ -18,5 +18,5 @@ lib:
 	for f in *.c; do if [ "$$f" != "main.c" ]; then $(CC) -c $$f -fPIC $(CFLAGS); fi; done
 	mv *.o $(LIB_DIR)
 	ar -rcs $(LIB_DIR)lib$(NAME).a $(LIB_DIR)*.o
-	cp $(NAME).h $(LIB_DIR)
+	ln -sf $(abspath $(NAME).h) $(LIB_DIR)$(NAME).h
 	rm $(LIB_DIR)*.o
