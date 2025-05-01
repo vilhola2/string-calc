@@ -35,6 +35,7 @@ typedef struct {
     size_t len;
 } TokenArray;
 
+void print_token_arr(TokenArray *token_arr);
 typedef struct {
     Token *items;
     int top;
@@ -64,6 +65,7 @@ void destroy_stack(Stack *stack) {
 bool stack_push(Stack *stack, Token item) {
     if(stack->top >= (int)stack->capacity - 1) return false;
     stack->items[++stack->top] = item;
+    //print_token_arr(&(TokenArray) { .arr = &item, 1 });
     return true;
 }
 
@@ -76,6 +78,7 @@ bool stack_pop(Stack *stack, Token *item) {
 bool stack_peek(const Stack *stack, Token *item) {
     if(stack->top < 0) return false;
     *item = stack->items[stack->top];
+    print_token_arr(&(TokenArray) { .arr = item, 1 });
     return true;
 }
 
@@ -247,9 +250,13 @@ void print_token_arr(TokenArray *token_arr) {
 }
 
 bool get_val(mpfr_t **val, Token *t) {
+    if(!t->is_var && !t->is_digit) {
+        fprintf(stderr, "get_val: Invalid token type\n");
+        return false;
+    }
     if(t->is_var) {
         if(!vars[t->var - 'A'].is_initialized) {
-            fprintf(stderr, "Variable '%c' is not defined\n", t->var);
+            fprintf(stderr, "get_val: Variable '%c' is not defined\n", t->var);
             //mpfr_clear(result.digits);
             return false;
         }
@@ -274,7 +281,7 @@ void apply_operator(Stack *output_stack, Token operator) {
                 if(vars[operand1.var - 'A'].is_initialized) {
                     mpfr_neg(result.digits, vars[operand1.var - 'A'].var, MPFR_RNDN);
                 } else {
-                    fprintf(stderr, "Variable '%c' is not defined\n", operand1.var);
+                    fprintf(stderr, "apply_operator 1: Variable '%c' is not defined\n", operand1.var);
                     mpfr_clear(result.digits);
                     return;
                 }
@@ -301,7 +308,7 @@ void apply_operator(Stack *output_stack, Token operator) {
             return;
         } else if(operand2.is_var) {
             if(!vars[operand2.var - 'A'].is_initialized) {
-                fprintf(stderr, "Variable '%c' is not defined\n", operand2.var);
+                fprintf(stderr, "apply_operator 2: Variable '%c' is not defined\n", operand2.var);
                 mpfr_clear(result.digits);
                 return;
             }
@@ -347,7 +354,7 @@ cleanup:
 bool calculate_infix(mpfr_t result, const char *expression) {
     TokenArray tokens = tokenize(expression);
     if(!tokens.arr) return false;
-    //print_token_arr(&tokens);
+    print_token_arr(&tokens);
     Stack *operator_stack = create_stack(tokens.len);
     Stack *output_stack = create_stack(tokens.len);
     if(!operator_stack || !output_stack) {
@@ -383,7 +390,10 @@ bool calculate_infix(mpfr_t result, const char *expression) {
                 && (top_op.is_operator)
                 && ((top_op.precedence > current.precedence)
                 || (top_op.precedence == current.precedence && !current.is_right_associative))) {
-                stack_pop(operator_stack, &top_op);
+                if(!stack_pop(operator_stack, &top_op)) {
+                    fprintf(stderr, "Failed to pop operator\n");
+                    break;
+                }
                 apply_operator(output_stack, top_op);
             }
             stack_push(operator_stack, current);
@@ -407,14 +417,15 @@ bool calculate_infix(mpfr_t result, const char *expression) {
                 mpfr_set(result, vars[final_result.var - 'A'].var, MPFR_RNDN);
                 success = true;
             } else {
-                fprintf(stderr, "Variable '%c' is not defined\n", final_result.var);
+                fprintf(stderr, "calculate_infix: Variable '%c' is not defined\n", final_result.var);
             }
         }
-    }
-    // Cleanup
-    while(stack_pop(output_stack, &final_result)) {
-        if(final_result.is_digit) {
-            mpfr_clear(final_result.digits);
+    } else {
+        // Cleanup
+        while(stack_pop(output_stack, &final_result)) {
+            if(final_result.is_digit) {
+                mpfr_clear(final_result.digits);
+            }
         }
     }
     destroy_stack(operator_stack);
