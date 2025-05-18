@@ -6,10 +6,7 @@
 #include <string.h>
 #include "defs.h"
 
-struct {
-    mpfr_t var;
-    bool is_initialized;
-} vars[LETTERS] = {0};
+UserVars vars[LETTERS] = {0};
 
 void cleanup_vars(void) {
     for (int i = 0; i < LETTERS; ++i) {

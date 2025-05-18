@@ -7,9 +7,10 @@
 #define MIN_BITS 256
 #define LETTERS 26
 
-extern struct {
+typedef struct {
     mpfr_t var;
     bool is_initialized;
-} vars[LETTERS];
+} UserVars;
+extern UserVars vars[LETTERS];
 
 #endif
