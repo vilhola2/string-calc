@@ -2,3 +2,4 @@ calc
 .variables
 core
 lib/
+build/
