@@ -10,9 +10,7 @@ UserVars vars[LETTERS] = {0};
 
 void cleanup_vars(void) {
     for (int8_t i = 0; i < LETTERS; ++i) {
-        if (vars[i].is_initialized) {
-            mpfr_clear(vars[i].var);
-        }
+        if (vars[i].is_initialized) mpfr_clear(vars[i].var);
     }
 }
 
@@ -23,9 +21,7 @@ bool write_all_vars(void) {
         return false;
     }
     for (int8_t i = 0; i < LETTERS; ++i) {
-        if (!vars[i].is_initialized) {
-            continue;
-        }
+        if (!vars[i].is_initialized) continue;
         char *val_str;
         mpfr_asprintf(&val_str, "%Re", vars[i].var);
         fprintf(fp, "%c=%s\n", 'A' + i, val_str);
