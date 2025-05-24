@@ -37,26 +37,19 @@ bool write_all_vars(void) {
 
 bool read_vars(void) {
     FILE *fp = fopen(".variables", "r");
-    if (!fp) {
-        return false;
-    }
+    if (!fp) return false;
     fseek(fp, 0, SEEK_END);
     size_t sz = ftell(fp);
+    if (!sz) return false;
     rewind(fp);
     char *line = malloc(sz + 1); // allocate maximum length
     while (fgets(line, sz, fp)) {
         line[strcspn(line, "\r\n")] = '\0';
-        if (line[1] != '=') {
-            continue;
-        }
+        if (line[1] != '=') continue;
         char var = line[0];
-        if (var < 'A' || var > 'Z') {
-            continue;
-        }
+        if (var < 'A' || var > 'Z') continue;
         int i = var - 'A';
-        if (vars[i].is_initialized) {
-            mpfr_clear(vars[i].var);
-        }
+        if (vars[i].is_initialized) mpfr_clear(vars[i].var);
         mpfr_init2(vars[i].var, MIN_BITS);
         if (mpfr_set_str(vars[i].var, line + 2, 0, MPFR_RNDN)) {
             fprintf(stderr, "read_vars: Failed to parse value for %c\n", var);
@@ -70,3 +63,4 @@ bool read_vars(void) {
     fclose(fp);
     return true;
 }
+
