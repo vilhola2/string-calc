@@ -3,12 +3,16 @@
 BUILD_TYPE=RELEASE
 BUILD_EXECUTABLE=ON
 
-if [ "$1" = "-d" ]; then
-  BUILD_TYPE="DEBUG"
-fi
-if [ "$1" = "-l" ]; then
-  BUILD_EXECUTABLE=OFF
-fi
+for arg in "$@"; do
+  case $arg in
+    -d)
+      BUILD_TYPE=DEBUG
+      ;;
+    -l)
+      BUILD_EXECUTABLE=OFF
+      ;;
+  esac
+done
 
 if command -v clang >/dev/null && clang --version | grep -E "version (1[89]|[2-9][0-9])" >/dev/null; then
     export CC=clang
