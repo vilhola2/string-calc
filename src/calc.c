@@ -203,6 +203,7 @@ TokenArray tokenize(const char *str) {
                     }
                 }
                 arr.arr[arr.len++] = (Token){.is_operator = true, .operation = LEFT_PARENTHESIS};
+                expect_operand = true;
             } else if (str[i] == ')') {
                 arr.arr[arr.len++] = (Token){.is_operator = true, .operation = RIGHT_PARENTHESIS};
             } else if (expect_operand) {
