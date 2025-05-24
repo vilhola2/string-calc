@@ -9,25 +9,23 @@
 #include "defs.h"
 #include "file_ops.h"
 
+typedef enum : uint8_t {
+    ADD,
+    SUBTRACT,
+    NEGATE,
+    MULTIPLY,
+    DIVIDE,
+    LEFT_PARENTHESIS,
+    RIGHT_PARENTHESIS,
+    SET_VAR,
+} OperationType;
+
 typedef struct {
-    bool is_digit;
-    bool is_operator;
-    bool is_var;
-    bool is_right_associative;
+    bool is_digit : 1, is_operator : 1, is_var : 1, is_right_associative : 1;
     int8_t precedence;
 
     union {
-        enum {
-            ADD,
-            SUBTRACT,
-            NEGATE,
-            MULTIPLY,
-            DIVIDE,
-            LEFT_PARENTHESIS,
-            RIGHT_PARENTHESIS,
-            SET_VAR,
-        } operation;
-
+        OperationType operation;
         mpfr_t digits;
         char var;
     };
@@ -42,22 +40,18 @@ void print_token_arr(TokenArray *token_arr);
 
 typedef struct {
     Token *items;
-    int64_t top;
+    size_t top;
     size_t capacity;
 } Stack;
 
 Stack *create_stack(size_t capacity) {
     Stack *stack = malloc(sizeof(Stack));
-    if (!stack) {
-        return nullptr;
-    }
-    stack->items = malloc(sizeof(Token) * capacity);
+    if (!stack) return nullptr;
+    *stack = (Stack){.items = malloc(sizeof(Token) * capacity), .capacity = capacity};
     if (!stack->items) {
         free(stack);
         return nullptr;
     }
-    stack->capacity = capacity;
-    stack->top = -1;
     return stack;
 }
 
@@ -69,10 +63,8 @@ void destroy_stack(Stack *stack) {
 }
 
 bool stack_push(Stack *stack, Token item) {
-    if (stack->top >= (int64_t)stack->capacity - 1) {
-        return false;
-    }
-    stack->items[++stack->top] = item;
+    if (stack->top == stack->capacity) return false;
+    stack->items[stack->top++] = item;
 #ifdef DEBUG
     printf("\nstack_push_debug:\n");
     print_token_arr(&(TokenArray){.arr = &item, 1});
@@ -82,10 +74,8 @@ bool stack_push(Stack *stack, Token item) {
 }
 
 bool stack_pop(Stack *stack, Token *item) {
-    if (stack->top < 0) {
-        return false;
-    }
-    *item = stack->items[stack->top--];
+    if (!stack->top) return false;
+    *item = stack->items[--stack->top];
 #ifdef DEBUG
     printf("\nstack_pop_debug:\n");
     print_token_arr(&(TokenArray){.arr = item, 1});
@@ -95,10 +85,8 @@ bool stack_pop(Stack *stack, Token *item) {
 }
 
 bool stack_peek(const Stack *stack, Token *item) {
-    if (stack->top < 0) {
-        return false;
-    }
-    *item = stack->items[stack->top];
+    if (!stack->top) return false;
+    *item = stack->items[stack->top - 1];
 #ifdef DEBUG
     printf("\nstack_peek_debug:\n");
     print_token_arr(&(TokenArray){.arr = item, 1});
@@ -107,23 +95,19 @@ bool stack_peek(const Stack *stack, Token *item) {
     return true;
 }
 
-bool stack_is_empty(const Stack *stack) { return stack->top < 0; }
+bool stack_is_empty(const Stack *stack) { return stack->top == 0; }
 
 void str_error_print(const char *error_msg, const char *str, size_t i) {
     fprintf(stderr, "%s\n%s\n", error_msg, str);
-    for (size_t j = 0; j < i; ++j) {
+    for (size_t j = 0; j < i; ++j)
         putc('-', stderr);
-    }
     fprintf(stderr, "^\n");
 }
 
 void free_token_array(TokenArray *arr) {
     if (arr->arr) {
-        for (size_t i = 0; i < arr->len; ++i) {
-            if (arr->arr[i].is_digit) {
-                mpfr_clear(arr->arr[i].digits);
-            }
-        }
+        for (size_t i = 0; i < arr->len; ++i)
+            if (arr->arr[i].is_digit) mpfr_clear(arr->arr[i].digits);
         free(arr->arr);
     }
 }
@@ -280,23 +264,22 @@ void print_token_arr(TokenArray *token_arr) {
             continue;
         }
         printf("Operation: ");
-        if (token_arr->arr[i].operation == ADD) {
+        if (token_arr->arr[i].operation == ADD)
             printf("ADD");
-        } else if (token_arr->arr[i].operation == NEGATE) {
+        else if (token_arr->arr[i].operation == NEGATE)
             printf("NEGATE");
-        } else if (token_arr->arr[i].operation == SUBTRACT) {
+        else if (token_arr->arr[i].operation == SUBTRACT)
             printf("SUBTRACT");
-        } else if (token_arr->arr[i].operation == DIVIDE) {
+        else if (token_arr->arr[i].operation == DIVIDE)
             printf("DIVIDE");
-        } else if (token_arr->arr[i].operation == MULTIPLY) {
+        else if (token_arr->arr[i].operation == MULTIPLY)
             printf("MULTIPLY");
-        } else if (token_arr->arr[i].operation == LEFT_PARENTHESIS) {
+        else if (token_arr->arr[i].operation == LEFT_PARENTHESIS)
             printf("LEFT_PAREN");
-        } else if (token_arr->arr[i].operation == RIGHT_PARENTHESIS) {
+        else if (token_arr->arr[i].operation == RIGHT_PARENTHESIS)
             printf("RIGHT_PAREN");
-        } else if (token_arr->arr[i].operation == SET_VAR) {
+        else if (token_arr->arr[i].operation == SET_VAR)
             printf("SET_VAR");
-        }
         printf(", precedence: %d\n", token_arr->arr[i].precedence);
     }
 }
