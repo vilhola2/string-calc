@@ -26,6 +26,12 @@ fi
 echo "Using compiler: $CC"
 echo "Using build type: $BUILD_TYPE"
 
+if [ "$BUILD_EXECUTABLE" = "ON" ]; then
+    echo "Building executable"
+else
+    echo "Building library"
+fi
+
 mkdir -p build
 cd build
 cmake -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DBUILD_EXECUTABLE=$BUILD_EXECUTABLE ..
