@@ -9,7 +9,7 @@
 UserVars vars[LETTERS] = {0};
 
 void cleanup_vars(void) {
-    for (int i = 0; i < LETTERS; ++i) {
+    for (int8_t i = 0; i < LETTERS; ++i) {
         if (vars[i].is_initialized) {
             mpfr_clear(vars[i].var);
         }
