@@ -22,6 +22,8 @@ mark_as_advanced(GMP_INCLUDES GMP_LIBRARIES)
 
 # Create imported target GMP::GMP
 if (GMP_FOUND)
+  message(STATUS "Found GMP: ${GMP_LIBRARIES}")
+
   add_library(GMP::GMP UNKNOWN IMPORTED)
 
   set_target_properties(GMP::GMP PROPERTIES
