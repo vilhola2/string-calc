@@ -4,6 +4,6 @@
 #include <gmp.h>
 #include <mpfr.h>
 
-bool calculate_infix(mpfr_t result, const char *expression);
+const char *calculate_infix(const char *expression);
 
 #endif

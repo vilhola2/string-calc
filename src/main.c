@@ -53,6 +53,7 @@ int main(void) {
             free(expression);
             write_all_vars();
             cleanup_vars();
+            mpfr_free_cache();
             return EXIT_SUCCESS;
         } else {
             // remove the spaces
@@ -64,17 +65,9 @@ int main(void) {
             }
             expression[write] = '\0';
         }
-        mpfr_t result;
-        mpfr_init2(result, 256);
-        bool success = calculate_infix(result, expression);
-        if (success) {
-            mpfr_printf("Result: %Rg\n", result);
-            mpfr_clear(result);
-            free(expression);
-        } else {
-            mpfr_clear(result);
-            free(expression);
-        }
+        const char *result = calculate_infix(expression);
+        if (result) printf("result: %s\n", result);
+        free(expression);
     }
     cleanup_vars();
     return EXIT_FAILURE;

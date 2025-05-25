@@ -18,6 +18,7 @@ typedef enum : uint8_t {
     LEFT_PARENTHESIS,
     RIGHT_PARENTHESIS,
     SET_VAR,
+    EQUALITY,
 } OperationType;
 
 typedef struct {
@@ -113,41 +114,35 @@ void free_token_array(TokenArray *arr) {
 }
 
 TokenArray tokenize(const char *str) {
-    size_t len = strlen(str);
-    const size_t starting_len = len; // len might grow
-    TokenArray arr = {.arr = calloc(len, sizeof(Token))};
+    size_t current_len = strlen(str);
+    const size_t starting_len = current_len; // current_len might grow
+    TokenArray arr = {.arr = calloc(current_len, sizeof(Token))};
     if (!arr.arr) {
         fprintf(stderr, "tokenize: Calloc failed\n");
         return (TokenArray){0};
     }
-    bool expect_operand = true;
-    bool has_equals = false;
-    bool is_var_assignment = false;
+    bool expect_operand = true, is_var_assignment = false;
     for (size_t i = 0; i < starting_len; ++i) {
         bool is_float = false;
         // Check for user variable definition first
         if (str[i] >= 'A' && str[i] <= 'Z') {
             arr.arr[arr.len++] = (Token){.is_var = true, .var = str[i]};
-            is_var_assignment = true;
             expect_operand = false;
         } else if (arr.len > 0 && str[i] == '=') {
-            if (has_equals) {
-                str_error_print("You can't assign twice", str, i);
-                free_token_array(&arr);
-                return (TokenArray){0};
-            }
-            if (is_var_assignment) {
+            if (arr.arr[0].is_var && arr.len == 1) {
                 arr.arr[arr.len++] = (Token){.is_operator = true, .operation = SET_VAR, .is_right_associative = true};
-                has_equals = true;
+                is_var_assignment = true;
+            } else if (!is_var_assignment) {
+                arr.arr[arr.len++] = (Token){.is_operator = true, .operation = EQUALITY};
             } else {
-                str_error_print("Nothing to assign", str, i);
+                str_error_print("You can't use assignment and equality in the same expression", str, i);
                 free_token_array(&arr);
                 return (TokenArray){0};
             }
         } else if (isdigit(str[i])) {
             size_t start = i;
             bool is_digit = true;
-            while (i < len && is_digit) {
+            while (i < current_len && is_digit) {
                 if (isdigit(str[i])) {
                     ++i;
                 } else {
@@ -175,7 +170,7 @@ TokenArray tokenize(const char *str) {
             size_t digits = i - start;
             char *num = malloc(digits + 1);
             if (!num) {
-                fprintf(stderr, "tokenizer: Malloc failed\n");
+                fprintf(stderr, "tokenize: Malloc failed\n");
                 free_token_array(&arr);
                 return (TokenArray){0};
             }
@@ -192,7 +187,7 @@ TokenArray tokenize(const char *str) {
                 if (arr.len > 0
                     && (arr.arr[arr.len - 1].is_digit
                         || (arr.arr[arr.len - 1].is_operator && arr.arr[arr.len - 1].operation == RIGHT_PARENTHESIS))) {
-                    Token *new_arr = realloc(arr.arr, ++len * sizeof(Token));
+                    Token *new_arr = realloc(arr.arr, ++current_len * sizeof(Token));
                     if (!new_arr) {
                         fprintf(stderr, "tokenize: Realloc failed\n");
                         free_token_array(&arr);
@@ -281,6 +276,8 @@ void print_token_arr(TokenArray *token_arr) {
             printf("RIGHT_PAREN");
         else if (token_arr->arr[i].operation == SET_VAR)
             printf("SET_VAR");
+        else if (token_arr->arr[i].operation == EQUALITY)
+            printf("EQUALITY");
         printf(", precedence: %d\n", token_arr->arr[i].precedence);
     }
 }
@@ -304,10 +301,11 @@ bool get_val(mpfr_t **val, Token *t) {
     return false;
 }
 
+bool result_is_boolean; // i cant be bothered to find a better way
+
 void apply_operator(Stack *output_stack, Token operator) {
+    result_is_boolean = false;
     Token operand1, operand2, result = {.is_digit = true};
-    result.is_digit = true;
-    result.is_operator = false;
     mpfr_init2(result.digits, MIN_BITS);
     if (operator.operation == NEGATE) {
         if (stack_pop(output_stack, &operand1)) {
@@ -381,6 +379,13 @@ void apply_operator(Stack *output_stack, Token operator) {
                 mpfr_div(result.digits, *val1, *val2, MPFR_RNDN);
             }
             break;
+        case EQUALITY:
+            if (mpfr_cmp(*val1, *val2) == 0)
+                mpfr_set_ui(result.digits, 1, MPFR_RNDN);
+            else
+                mpfr_set_zero(result.digits, 1);
+            result_is_boolean = true;
+            break;
         default: success = false; break;
     }
     if (success) {
@@ -397,11 +402,9 @@ cleanup:
     }
 }
 
-bool calculate_infix(mpfr_t result, const char *expression) {
+const char *calculate_infix(const char *expression) {
     TokenArray tokens = tokenize(expression);
-    if (!tokens.arr) {
-        return false;
-    }
+    if (!tokens.arr) return nullptr;
 #ifdef DEBUG
     print_token_arr(&tokens);
 #endif
@@ -409,13 +412,9 @@ bool calculate_infix(mpfr_t result, const char *expression) {
     Stack *output_stack = create_stack(tokens.len);
     if (!operator_stack || !output_stack) {
         free_token_array(&tokens);
-        if (operator_stack) {
-            destroy_stack(operator_stack);
-        }
-        if (output_stack) {
-            destroy_stack(output_stack);
-        }
-        return false;
+        if (operator_stack) destroy_stack(operator_stack);
+        if (output_stack) destroy_stack(output_stack);
+        return nullptr;
     }
     // Process tokens using Shunting Yard algorithm
     for (size_t i = 0; i < tokens.len; i++) {
@@ -461,16 +460,20 @@ bool calculate_infix(mpfr_t result, const char *expression) {
     }
 
     Token final_result;
-    bool success = false;
+    char *result_str = nullptr;
     if (stack_pop(output_stack, &final_result) && stack_is_empty(output_stack)) {
-        if (final_result.is_digit) {
-            mpfr_set(result, final_result.digits, MPFR_RNDN);
+        if (result_is_boolean) {
+            if (mpfr_cmp_ui(final_result.digits, 1) == 0)
+                result_str = "true";
+            else
+                result_str = "false";
             mpfr_clear(final_result.digits);
-            success = true;
+        } else if (final_result.is_digit) {
+            mpfr_asprintf(&result_str, "%Rg", final_result.digits);
+            mpfr_clear(final_result.digits);
         } else if (final_result.is_var) {
             if (vars[final_result.var - 'A'].is_initialized) {
-                mpfr_set(result, vars[final_result.var - 'A'].var, MPFR_RNDN);
-                success = true;
+                mpfr_asprintf(&result_str, "%Rg", vars[final_result.var - 'A'].var);
             } else {
                 fprintf(stderr, "calculate_infix: Variable '%c' is not defined\n", final_result.var);
             }
@@ -486,6 +489,6 @@ bool calculate_infix(mpfr_t result, const char *expression) {
     destroy_stack(operator_stack);
     destroy_stack(output_stack);
     free_token_array(&tokens);
-    return success;
+    return result_str;
 }
 
