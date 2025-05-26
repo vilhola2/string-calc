@@ -3,7 +3,9 @@
 
 #include <gmp.h>
 #include <mpfr.h>
+#include "file_ops.h"
 
-const char *calculate_infix(const char *expression);
+// WARNING! Result must be freed with mpfr_free_str()!
+char *calculate_infix(const char *expression);
 
 #endif

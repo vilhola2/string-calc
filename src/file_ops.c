@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "defs.h"
+#include "structs.h"
 
 UserVars vars[LETTERS] = {0};
 

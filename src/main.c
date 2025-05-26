@@ -5,7 +5,6 @@
 #include <string.h>
 
 #include "calc.h"
-#include "file_ops.h"
 
 char *str_input(FILE *stream) {
     int ch;
@@ -65,8 +64,11 @@ int main(void) {
             }
             expression[write] = '\0';
         }
-        const char *result = calculate_infix(expression);
-        if (result) printf("result: %s\n", result);
+        char *result = calculate_infix(expression);
+        if (result) {
+            printf("Result: %s\n", result);
+            mpfr_free_str(result);
+        }
         free(expression);
     }
     cleanup_vars();
