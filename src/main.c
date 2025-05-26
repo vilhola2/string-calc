@@ -12,7 +12,7 @@ char *str_input(FILE *stream) {
     size_t bufsize = 16;
     char *buffer = malloc(bufsize);
     if (!buffer) {
-        printf("str_input: Malloc failed\n");
+        fprintf(stderr, "str_input: Malloc failed\n");
         return NULL;
     }
     while ((ch = fgetc(stream)) != EOF && ch != '\n') {
