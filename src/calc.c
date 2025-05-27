@@ -3,6 +3,7 @@
 #include <mpfr.h>
 #include <stdint.h>
 #include <stdio.h>
+#include "calc.h"
 #include "defs.h"
 #include "file_ops.h"
 #include "structs.h"
@@ -125,9 +126,9 @@ cleanup:
     if (operand2.is_digit) mpfr_clear(operand2.digits);
 }
 
-const char *calculate_infix(const char *expression) {
+CalculatorResult calculate_infix(const char *expression) {
     TokenArray tokens = tokenize(expression);
-    if (!tokens.arr) return nullptr;
+    if (!tokens.arr) return (CalculatorResult){0};
 #ifdef DEBUG
     print_token_arr(&tokens);
 #endif
@@ -137,7 +138,7 @@ const char *calculate_infix(const char *expression) {
         free_token_array(&tokens);
         if (operator_stack) destroy_stack(operator_stack);
         if (output_stack) destroy_stack(output_stack);
-        return nullptr;
+        return (CalculatorResult){0};
     }
     // Process tokens using Shunting Yard algorithm
     for (size_t i = 0; i < tokens.len; i++) {
@@ -183,22 +184,26 @@ const char *calculate_infix(const char *expression) {
     }
 
     Token final_result;
-    char *result_str = nullptr;
+    CalculatorResult calc_result = {.type = CALC_MPFR_STRING};
     if (stack_pop(output_stack, &final_result) && stack_is_empty(output_stack)) {
         if (result_is_boolean) {
-            if (mpfr_cmp_ui(final_result.digits, 1) == 0)
-                result_str = "true";
-            else
-                result_str = "false";
+            if (mpfr_cmp_ui(final_result.digits, 1) == 0) {
+                calc_result.type = CALC_BOOLEAN_STRING;
+                calc_result.str = "true";
+            } else {
+                calc_result.type = CALC_BOOLEAN_STRING;
+                calc_result.str = "false";
+            }
             mpfr_clear(final_result.digits);
         } else if (final_result.is_digit) {
-            mpfr_asprintf(&result_str, "%Rg", final_result.digits);
+            mpfr_asprintf(&calc_result.str, "%Rg", final_result.digits);
             mpfr_clear(final_result.digits);
         } else if (final_result.is_var) {
             if (vars[final_result.var - 'A'].is_initialized) {
-                mpfr_asprintf(&result_str, "%Rg", vars[final_result.var - 'A'].var);
+                mpfr_asprintf(&calc_result.str, "%Rg", vars[final_result.var - 'A'].var);
             } else {
                 fprintf(stderr, "calculate_infix: Variable '%c' is not defined\n", final_result.var);
+                calc_result.type = CALC_ERROR;
             }
         }
     } else {
@@ -212,6 +217,6 @@ const char *calculate_infix(const char *expression) {
     destroy_stack(operator_stack);
     destroy_stack(output_stack);
     free_token_array(&tokens);
-    return result_str;
+    return calc_result;
 }
 

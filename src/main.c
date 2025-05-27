@@ -64,12 +64,12 @@ int main(void) {
             }
             expression[write] = '\0';
         }
-        char *result = calculate_infix(expression);
-        if (result) {
-            printf("Result: %s\n", result);
-            mpfr_free_str(result);
-        }
+        CalculatorResult result = calculate_infix(expression);
         free(expression);
+        if (result.type != CALC_ERROR) {
+            printf("Result: %s\n", result.str);
+            if (result.type == CALC_MPFR_STRING) mpfr_free_str(result.str);
+        }
     }
     cleanup_vars();
     return EXIT_FAILURE;
