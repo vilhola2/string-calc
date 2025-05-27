@@ -3,3 +3,5 @@ calc
 core
 lib/
 build/
+.cache/
+compile_commands.json

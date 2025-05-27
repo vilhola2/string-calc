@@ -1,12 +1,14 @@
 #!/bin/sh
 
 BUILD_TYPE=RELEASE
+EXPORT_COMPILE_COMMANDS="OFF"
 BUILD_EXECUTABLE=ON
 
 for arg in "$@"; do
   case $arg in
     -d)
       BUILD_TYPE=DEBUG
+      EXPORT_COMPILE_COMMANDS="ON"
       ;;
     -l)
       BUILD_EXECUTABLE=OFF
@@ -34,5 +36,9 @@ fi
 
 mkdir -p build
 cd build
-cmake -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DBUILD_EXECUTABLE=$BUILD_EXECUTABLE ..
+cmake -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DBUILD_EXECUTABLE=$BUILD_EXECUTABLE -DCMAKE_EXPORT_COMPILE_COMMANDS=$EXPORT_COMPILE_COMMANDS ..
 make
+
+if [ "$EXPORT_COMPILE_COMMANDS" = "ON" ]; then
+  mv compile_commands.json ..
+fi

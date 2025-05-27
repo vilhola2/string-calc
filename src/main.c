@@ -52,7 +52,7 @@ int main(void) {
             free(expression);
             write_all_vars();
             cleanup_vars();
-            mpfr_free_cache();
+            //mpfr_free_cache();
             return EXIT_SUCCESS;
         } else {
             // remove the spaces
