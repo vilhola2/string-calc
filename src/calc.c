@@ -32,7 +32,6 @@ bool get_val(mpfr_t **val, Token *t) {
 bool result_is_boolean; // i cant be bothered to find a better way
 
 void apply_operator(Stack *output_stack, Token operator) {
-    result_is_boolean = false;
     Token operand1, operand2, result = {.is_digit = true};
     mpfr_init2(result.digits, MIN_BITS);
     if (operator.operation == NEGATE) {
@@ -127,6 +126,7 @@ cleanup:
 }
 
 CalculatorResult calculate_infix(const char *expression) {
+    result_is_boolean = false; 
     TokenArray tokens = tokenize(expression);
     if (!tokens.arr) return (CalculatorResult){0};
 #ifdef DEBUG
@@ -219,4 +219,3 @@ CalculatorResult calculate_infix(const char *expression) {
     free_token_array(&tokens);
     return calc_result;
 }
-
